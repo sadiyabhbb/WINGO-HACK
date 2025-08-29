@@ -1,10 +1,10 @@
 // bot.js
-require('dotenv').config(); // .env থেকে টোকেন নেওয়ার জন্য
+require('dotenv').config();
 const TelegramBot = require("node-telegram-bot-api");
 const Tesseract = require("tesseract.js");
 const fs = require("fs");
 const path = require("path");
-const fetch = require("node-fetch");
+const fetch = require("node-fetch"); // node-fetch v2 ব্যবহার
 
 // 🔑 Bot token (.env ফাইল থেকে)
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -24,16 +24,15 @@ function numToLabel(n) {
 function predict(nums) {
   let labels = nums.map(num => numToLabel(parseInt(num)));
 
-  // frequency
   let smallCount = labels.filter(x => x === "Small").length;
   let bigCount = labels.filter(x => x === "Big").length;
 
   let last = labels[labels.length - 1];
   let secondLast = labels[labels.length - 2];
 
-  // anti-streak penalty
   let probSmall = smallCount / labels.length;
   let probBig = bigCount / labels.length;
+
   if (last === secondLast) {
     if (last === "Small") probSmall *= 0.8;
     if (last === "Big") probBig *= 0.8;
@@ -69,6 +68,7 @@ bot.on("photo", async (msg) => {
 
     // Download image
     const response = await fetch(url);
+    if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
     const buffer = await response.arrayBuffer();
     fs.writeFileSync(localPath, Buffer.from(buffer));
 
@@ -95,7 +95,7 @@ bot.on("photo", async (msg) => {
 
     fs.unlinkSync(localPath); // cleanup
   } catch (err) {
-    console.error(err);
+    console.error("Error details:", err);
     bot.sendMessage(chatId, "❌ Error processing the screenshot.");
   }
 });
