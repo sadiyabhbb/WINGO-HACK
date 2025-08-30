@@ -4,8 +4,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const Tesseract = require("tesseract.js");
 const fs = require("fs");
 const path = require("path");
-const fetch = require("node-fetch"); // node-fetch v2 ব্যবহার
-const http = require("http"); // Render-এর জন্য dummy server
+const fetch = require("node-fetch");
 
 // 🔑 Bot token (.env ফাইল থেকে)
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -16,35 +15,6 @@ if (!TOKEN) {
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// --- Helper: number → Small/Big ---
-function numToLabel(n) {
-  return n <= 4 ? "Small" : "Big";
-}
-
-// --- Prediction Algorithm ---
-function predict(nums) {
-  let labels = nums.map(num => numToLabel(parseInt(num)));
-
-  let smallCount = labels.filter(x => x === "Small").length;
-  let bigCount = labels.filter(x => x === "Big").length;
-
-  let last = labels[labels.length - 1];
-  let secondLast = labels[labels.length - 2];
-
-  let probSmall = smallCount / labels.length;
-  let probBig = bigCount / labels.length;
-
-  if (last === secondLast) {
-    if (last === "Small") probSmall *= 0.8;
-    if (last === "Big") probBig *= 0.8;
-  }
-
-  let pred = probSmall > probBig ? "Small" : "Big";
-  let confidence = Math.max(probSmall, probBig);
-
-  return { pred, confidence, labels };
-}
-
 // --- OCR Extract ---
 async function ocrExtract(filePath) {
   const { data: { text } } = await Tesseract.recognize(filePath, "eng");
@@ -52,9 +22,23 @@ async function ocrExtract(filePath) {
   return matches ? matches.slice(-10) : [];
 }
 
+// --- External API Call ---
+async function analyzeWithAPI(prompt) {
+  try {
+    const url = `https://apis-top.vercel.app/aryan/gpt-4?ask=${encodeURIComponent(prompt)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("API failed: " + res.status);
+    const data = await res.text(); // API যদি JSON না হয়ে plain text দেয়
+    return data;
+  } catch (err) {
+    console.error("API error:", err);
+    return "❌ AI API error.";
+  }
+}
+
 // --- Bot Handlers ---
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "👋 Send me a screenshot of the last 10 rounds, I'll predict the next Small/Big.");
+  bot.sendMessage(msg.chat.id, "👋 Just send me a screenshot of last results, I'll analyze and give you the next signal.");
 });
 
 bot.on("photo", async (msg) => {
@@ -70,42 +54,27 @@ bot.on("photo", async (msg) => {
     // Download image
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
-    const buffer = await response.arrayBuffer();
-    fs.writeFileSync(localPath, Buffer.from(buffer));
+    const buffer = await response.buffer();
+    fs.writeFileSync(localPath, buffer);
 
-    // OCR
+    // OCR extract numbers
     let nums = await ocrExtract(localPath);
+    fs.unlinkSync(localPath); // cleanup
 
     if (nums.length < 5) {
       bot.sendMessage(chatId, "⚠️ Couldn't read enough numbers. Please send a clearer screenshot.");
-      fs.unlinkSync(localPath);
       return;
     }
 
-    // Prediction
-    let result = predict(nums);
+    // Send OCR result to external API
+    const prompt = `Here are the last game numbers: ${nums.join(", ")}. Predict the next signal (Small/Big) with reasoning.`;
+    let analysis = await analyzeWithAPI(prompt);
 
-    // Reply
-    bot.sendMessage(chatId, 
-      `📊 Last Numbers: ${nums.join(", ")}\n` +
-      `🔮 Next Signal → *${result.pred}*\n` +
-      `📈 Confidence → ${(result.confidence * 100).toFixed(1)}%\n` +
-      `📌 Reason → Based on last 10 rounds (anti-streak applied).`,
-      { parse_mode: "Markdown" }
-    );
+    // Reply to user
+    bot.sendMessage(chatId, "🤖 AI Analysis:\n" + analysis);
 
-    fs.unlinkSync(localPath); // cleanup
   } catch (err) {
     console.error("Error details:", err);
     bot.sendMessage(chatId, "❌ Error processing the screenshot.");
   }
-});
-
-// --- Dummy server for Render ---
-const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("Bot is running!\n");
-}).listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
 });
