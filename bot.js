@@ -5,6 +5,7 @@ const Tesseract = require("tesseract.js");
 const fs = require("fs");
 const path = require("path");
 const fetch = require("node-fetch"); // node-fetch v2 ব্যবহার
+const http = require("http"); // Render-এর জন্য dummy server
 
 // 🔑 Bot token (.env ফাইল থেকে)
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -98,4 +99,13 @@ bot.on("photo", async (msg) => {
     console.error("Error details:", err);
     bot.sendMessage(chatId, "❌ Error processing the screenshot.");
   }
+});
+
+// --- Dummy server for Render ---
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("Bot is running!\n");
+}).listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
 });
