@@ -28,7 +28,7 @@ async function analyzeWithAPI(prompt) {
     const url = `https://apis-top.vercel.app/aryan/gpt-4?ask=${encodeURIComponent(prompt)}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error("API failed: " + res.status);
-    const data = await res.text(); // API যদি JSON না হয়ে plain text দেয়
+    const data = await res.text(); // API response plain text
     return data;
   } catch (err) {
     console.error("API error:", err);
@@ -38,7 +38,7 @@ async function analyzeWithAPI(prompt) {
 
 // --- Bot Handlers ---
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "👋 Just send me a screenshot of last results, I'll analyze and give you the next signal.");
+  bot.sendMessage(msg.chat.id, "👋 Send a screenshot of last game numbers, I'll predict the next signal (Small/Big).");
 });
 
 bot.on("photo", async (msg) => {
@@ -66,12 +66,19 @@ bot.on("photo", async (msg) => {
       return;
     }
 
-    // Send OCR result to external API
-    const prompt = `Here are the last game numbers: ${nums.join(", ")}. Predict the next signal (Small/Big) with reasoning.`;
+    // Strict prompt: Only Small/Big
+    const prompt = `Last 10 game numbers: ${nums.join(", ")}.
+Predict the next signal.
+Reply ONLY with "Small" or "Big". No explanation, no extra text.`;
+
     let analysis = await analyzeWithAPI(prompt);
 
+    // Extract Small/Big from response
+    let match = analysis.match(/\b(Small|Big)\b/i);
+    let signal = match ? match[0] : "❌ Could not determine signal";
+
     // Reply to user
-    bot.sendMessage(chatId, "🤖 AI Analysis:\n" + analysis);
+    bot.sendMessage(chatId, `🔮 Signal → *${signal}*`, { parse_mode: "Markdown" });
 
   } catch (err) {
     console.error("Error details:", err);
